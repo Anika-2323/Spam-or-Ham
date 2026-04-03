@@ -1,88 +1,86 @@
-# ================================
-# 1. Import Libraries
-# ================================
+import streamlit as st
 import pandas as pd
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import Lasso
 
 # ================================
-# 2. Load Dataset
+# Title
 # ================================
-df = pd.read_csv("spam.csv", encoding='latin-1')
-
-# Keep only required columns
-df = df[['v1', 'v2']]
-df.columns = ['label', 'message']
-
-# Convert labels: ham = 0, spam = 1
-df['label'] = df['label'].map({'ham': 0, 'spam': 1})
-
-print("Dataset Loaded Successfully!\n")
+st.title("📩 SMS Spam Detection using Lasso")
+st.write("Enter a message and check whether it's Spam or Ham")
 
 # ================================
-# 3. TF-IDF Vectorization
+# Load Dataset
 # ================================
-vectorizer = TfidfVectorizer(stop_words='english')
+@st.cache_data
+def load_data():
+    df = pd.read_csv("spam.csv", encoding='latin-1')
+    df = df[['v1', 'v2']]
+    df.columns = ['label', 'message']
+    df['label'] = df['label'].map({'ham': 0, 'spam': 1})
+    return df
 
-X = vectorizer.fit_transform(df['message'])
-y = df['label']
-
-# Total features
-total_features = X.shape[1]
-print("Total number of features created by TF-IDF:", total_features)
-print()
-
-# ================================
-# 4. Lasso Model (alpha = 0.1)
-# ================================
-lasso_01 = Lasso(alpha=0.1)
-lasso_01.fit(X, y)
-
-coef_01 = lasso_01.coef_
-
-non_zero_01 = (coef_01 != 0).sum()
-zero_01 = (coef_01 == 0).sum()
-
-print("Results for alpha = 0.1")
-print("Non-zero coefficients (selected features):", non_zero_01)
-print("Zero coefficients (eliminated features):", zero_01)
-print()
+df = load_data()
 
 # ================================
-# 5. Different Alpha Values
+# TF-IDF Vectorization
 # ================================
-alphas = [0.01, 0.1, 1]
-
-results = []
-
-for alpha in alphas:
-    model = Lasso(alpha=alpha)
+@st.cache_resource
+def train_model(data):
+    vectorizer = TfidfVectorizer(stop_words='english')
+    X = vectorizer.fit_transform(data['message'])
+    y = data['label']
+    
+    model = Lasso(alpha=0.1, max_iter=10000)
     model.fit(X, y)
     
-    coef = model.coef_
-    
-    non_zero = (coef != 0).sum()
-    zero = (coef == 0).sum()
-    
-    reduction = ((total_features - non_zero) / total_features) * 100
-    
-    results.append((alpha, non_zero, zero, reduction))
+    return vectorizer, model, X
+
+vectorizer, model, X = train_model(df)
 
 # ================================
-# 6. Display Results
+# Show Feature Info
 # ================================
-print("Comparison of Lasso with different alpha values:\n")
+st.subheader("📊 Feature Information")
 
-for res in results:
-    print("Alpha =", res[0])
-    print("Selected features (non-zero):", res[1])
-    print("Eliminated features:", res[2])
-    print("Percentage reduction: {:.2f}%".format(res[3]))
-    print("-----------------------------------")
+total_features = X.shape[1]
+coefficients = model.coef_
+
+non_zero = np.sum(coefficients != 0)
+zero = np.sum(coefficients == 0)
+reduction = ((total_features - non_zero) / total_features) * 100
+
+st.write("Total Features (TF-IDF):", total_features)
+st.write("Selected Features (Non-zero):", non_zero)
+st.write("Eliminated Features:", zero)
+st.write("Feature Reduction (%): {:.2f}%".format(reduction))
 
 # ================================
-# 7. Final Percentage Reduction (alpha=0.1)
+# User Input
 # ================================
-reduction_01 = ((total_features - non_zero_01) / total_features) * 100
+st.subheader("✍️ Enter your SMS")
 
-print("\nFinal Percentage Reduction for alpha=0.1: {:.2f}%".format(reduction_01))
+user_input = st.text_area("Type your message here...")
+
+# ================================
+# Prediction
+# ================================
+if st.button("Predict"):
+    if user_input.strip() == "":
+        st.warning("⚠️ Please enter a message")
+    else:
+        input_vector = vectorizer.transform([user_input])
+        prediction = model.predict(input_vector)[0]
+        
+        # Convert regression output to classification
+        if prediction >= 0.5:
+            st.error("🚨 This is SPAM!")
+        else:
+            st.success("✅ This is HAM (Not Spam)")
+
+# ================================
+# Footer
+# ================================
+st.write("---")
+st.caption("Built with ❤️ using Streamlit + Lasso Regression")
